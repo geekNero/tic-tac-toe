@@ -1,10 +1,19 @@
 package main
 
+import "math/rand/v2"
+
 type (
 	state XO
 
+	dice struct {
+		x      int
+		o      int
+		winner XO
+	}
+
 	game struct {
 		state
+		*dice
 	}
 )
 
@@ -63,7 +72,8 @@ func (m *model) checkState() {
 		m.nextPiece = O
 	}
 
-	if m.gridExhausted() {
+	slots := m.openEmptySlots()
+	if slots == 0 {
 		Game.state = tie
 	}
 }
@@ -115,6 +125,63 @@ func (m *model) checkWinCondition(player XO) bool {
 	return wonYAxis || wonXAxis || wonDiagonal1 || wonDiagonal2
 }
 
+func (m model) diceAvailable() bool {
+	slotType := O
+	if Game.state == state(O) {
+		slotType = X
+	}
+
+	for y := range N {
+		for x := range N {
+			if m.grid[y][x] == slotType {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (g *game) rollDice() {
+	g.dice = &dice{}
+
+	for g.x == g.o {
+
+		// roll dice for x
+		g.x = rand.IntN(6) + 1
+
+		// roll dice for o
+		g.o = rand.IntN(6) + 1
+
+	}
+
+	if g.x > g.o {
+		g.winner = X
+	} else {
+		g.winner = O
+	}
+}
+
+func (m *model) handleDiceResult() {
+	if Game.state != state(Game.winner) {
+		Game.state = state(Game.winner)
+		m.nextPiece = Game.winner
+	} else {
+		// set the opponent's pieces as the open spots
+		for y := range N {
+			for x := range N {
+				if m.grid[y][x] != opponent[Game.winner] {
+					m.open[y][x] = false
+				} else {
+					m.open[y][x] = true
+				}
+			}
+		}
+	}
+
+	Game.dice = nil
+}
+
 func (g game) isWon() bool {
 	return g.state == winO || g.state == winX
 }
@@ -123,14 +190,19 @@ func (g game) over() bool {
 	return g.state == winO || g.state == winX || g.state == tie
 }
 
-func (m model) gridExhausted() bool {
+func (m *model) openEmptySlots() int {
+	freeSlots := 0
+
 	for y := range N {
 		for x := range N {
-			if m.open[y][x] {
-				return false
+			if m.grid[y][x] == Empty {
+				m.open[y][x] = true
+				freeSlots++
+			} else {
+				m.open[y][x] = false
 			}
 		}
 	}
 
-	return true
+	return freeSlots
 }

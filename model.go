@@ -6,19 +6,21 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-type Pos struct {
-	X int
-	Y int
-}
+type (
+	Pos struct {
+		X int
+		Y int
+	}
 
-type XO string
+	XO string
 
-type model struct {
-	nextPiece XO
-	cursor    Pos
-	grid      [N][N]XO
-	open      [N][N]bool
-}
+	model struct {
+		nextPiece XO
+		cursor    Pos
+		grid      [N][N]XO
+		open      [N][N]bool
+	}
+)
 
 const (
 	// Board Size
@@ -29,6 +31,11 @@ const (
 	X     XO = " X "
 	O     XO = " O "
 )
+
+var opponent = map[XO]XO{
+	X: O,
+	O: X,
+}
 
 func (m model) Init() tea.Cmd {
 	return nil
@@ -53,21 +60,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 
+		gameOn := Game != nil && !Game.over()
 		switch msg.String() {
 		case "s":
 			if Game == nil {
 				m.setGame()
 			}
 		case "n":
-			if Game.over() {
+			if Game != nil && Game.over() {
 				m = initialModel()
 				Game = nil
 			}
 		case "q":
 			return m, tea.Quit
+		case "d":
+			if gameOn && m.diceAvailable() {
+				Game.rollDice()
+			}
+
+		case "p":
+			if gameOn && Game.dice != nil {
+				m.handleDiceResult()
+			}
 
 		case "up", "k":
-			if Game != nil && !Game.over() && m.cursor.Y > 0 {
+			if gameOn && m.cursor.Y > 0 {
 				// if the above square is open, select it.
 				if m.open[m.cursor.Y-1][m.cursor.X] {
 					m.cursor.Y--
@@ -86,7 +103,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "down", "j":
-			if Game != nil && !Game.over() && m.cursor.Y < N-1 {
+			if gameOn && m.cursor.Y < N-1 {
 				if m.open[m.cursor.Y+1][m.cursor.X] {
 					m.cursor.Y++
 				} else {
@@ -105,7 +122,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "left", "h":
 			// skip the used blocks
-			if Game != nil && !Game.over() && m.cursor.X > 0 {
+			if gameOn && m.cursor.X > 0 {
 				for x := m.cursor.X - 1; x >= 0; x-- {
 					if m.open[m.cursor.Y][x] {
 						m.cursor.X = x
@@ -115,7 +132,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "right", "l":
-			if Game != nil && !Game.over() && m.cursor.X < N-1 {
+			if gameOn && m.cursor.X < N-1 {
 				for x := m.cursor.X + 1; x < N; x++ {
 					if m.open[m.cursor.Y][x] {
 						m.cursor.X = x
@@ -124,8 +141,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "enter", "space":
-			if Game != nil && !Game.over() && m.open[m.cursor.Y][m.cursor.X] {
+		case "space":
+			if gameOn && m.open[m.cursor.Y][m.cursor.X] {
 				m.grid[m.cursor.Y][m.cursor.X] = m.nextPiece
 				m.checkState()
 			}
@@ -137,7 +154,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() tea.View {
 	s := titleUI
 
-	s += m.board()
+	if Game != nil && Game.dice != nil {
+		s += m.dice()
+	} else {
+		s += m.board()
+	}
 
 	if Game == nil {
 		s += menuUI
@@ -146,7 +167,19 @@ func (m model) View() tea.View {
 	} else if Game.state == tie {
 		s += tieUI
 	} else {
-		s += fmt.Sprintf(turnUI, string(Game.state))
+		if Game.dice != nil {
+			if Game.winner == XO(Game.state) {
+				s += fmt.Sprintf(diceUI, Game.winner, fmt.Sprintf(flipPiece, Game.state))
+			} else {
+				s += fmt.Sprintf(diceUI, Game.winner, fmt.Sprintf(takeTurn, Game.state))
+			}
+		} else {
+			if m.diceAvailable() {
+				s += fmt.Sprintf(turnUI, string(Game.state), diceAvailableUI)
+			} else {
+				s += fmt.Sprintf(turnUI, string(Game.state), ".")
+			}
+		}
 	}
 
 	return tea.NewView(s)
